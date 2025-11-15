@@ -46,22 +46,22 @@ warn() { cecho "${WARN} $*"; log "WARN" "$*"; }
 error() { cecho "${ERR} $*"; log "ERROR" "$*"; }
 
 run_logged() {
-  log "CMD" "$*"
-  eval "$*" >>"$LOGFILE" 2>&1
-  local rc=$?
-  if [ $rc -ne 0 ]; then
-    error "Befehl fehlgeschlagen (rc=$rc): $*"
-  fi
-  return $rc
+  log "CMD" "$*"
+  eval "$*" >>"$LOGFILE" 2>&1
+  local rc=$?
+  if [ $rc -ne 0 ]; then
+    error "Befehl fehlgeschlagen (rc=$rc): $*"
+  fi
+  return $rc
 }
 
 trap_exit() {
-  local rc=$?
-  if [ $rc -ne 0 ]; then
-    error "Installer beendet mit Fehlercode $rc. Prüfe $LOGFILE"
-  else
-    ok "Installer beendet (Exit code 0)."
-  fi
+  local rc=$?
+  if [ $rc -ne 0 ]; then
+    error "Installer beendet mit Fehlercode $rc. Prüfe $LOGFILE"
+  else
+    ok "Installer beendet (Exit code 0)."
+  fi
 }
 trap trap_exit EXIT
 
@@ -72,146 +72,146 @@ valid_password() { local p="$1"; [[ ${#p} -ge 8 && "$p" =~ [A-Z] && "$p" =~ [a-z
 
 ### CLI ARG PARSING
 for arg in "$@"; do
-  case $arg in
-    --panel) INSTALL_PANEL=true ;;
-    --wings) INSTALL_WINGS=true ;;
-    --all) INSTALL_PANEL=true; INSTALL_WINGS=true ;;
-    --domain=*) PANEL_DOMAIN="${arg#*=}" ;;
-    --db-pass=*) DB_PASSWORD="${arg#*=}" ;;
-    --email=*) ADMIN_EMAIL="${arg#*=}" ;;
-    --user=*) ADMIN_USERNAME="${arg#*=}" ;;
-    --admin-pass=*) ADMIN_PASS="${arg#*=}" ;;
-    --first=*) ADMIN_FIRST="${arg#*=}" ;;
-    --last=*) ADMIN_LAST="${arg#*=}" ;;
-    --tz=*) APP_TIMEZONE="${arg#*=}" ;;
-    --yes|-y) AUTO_YES=true ;;
-    --no-update) NO_SELF_UPDATE=true ;;
-    --help|-h) echo "Usage: $0 [--panel] [--wings] [--all] [--domain=...] [--db-pass=...] [--email=...] [--user=...] [--admin-pass=...] [--first=...] [--last=...] [--tz=...] [--yes] [--no-update]"; exit 0 ;;
-    *) ;;
-  esac
+  case $arg in
+    --panel) INSTALL_PANEL=true ;;
+    --wings) INSTALL_WINGS=true ;;
+    --all) INSTALL_PANEL=true; INSTALL_WINGS=true ;;
+    --domain=*) PANEL_DOMAIN="${arg#*=}" ;;
+    --db-pass=*) DB_PASSWORD="${arg#*=}" ;;
+    --email=*) ADMIN_EMAIL="${arg#*=}" ;;
+    --user=*) ADMIN_USERNAME="${arg#*=}" ;;
+    --admin-pass=*) ADMIN_PASS="${arg#*=}" ;;
+    --first=*) ADMIN_FIRST="${arg#*=}" ;;
+    --last=*) ADMIN_LAST="${arg#*=}" ;;
+    --tz=*) APP_TIMEZONE="${arg#*=}" ;;
+    --yes|-y) AUTO_YES=true ;;
+    --no-update) NO_SELF_UPDATE=true ;;
+    --help|-h) echo "Usage: $0 [--panel] [--wings] [--all] [--domain=...] [--db-pass=...] [--email=...] [--user=...] [--admin-pass=...] [--first=...] [--last=...] [--tz=...] [--yes] [--no-update]"; exit 0 ;;
+    *) ;;
+  esac
 done
 
 ### FUNCTIONS
 clean_apt_sources() {
-  info "Bereinige temporäre/konfliktäre APT-Quellen..."
-  # Entferne Dateien, die von vorherigen (fehlgeschlagenen) Läufen Konflikte verursachen könnten (z.B. PHP/Redis GPG-Key Konflikte)
-  rm -f /etc/apt/sources.list.d/php-sury.list
-  rm -f /etc/apt/sources.list.d/redis.list
-  rm -f /etc/apt/sources.list.d/docker.list
-  # Entferne deb822 Quellen, falls sie auf leere Dateien verweisen
-  rm -f /etc/apt/sources.list.d/debian.sources
+  info "Bereinige temporäre/konfliktäre APT-Quellen..."
+  # Entferne Dateien, die von vorherigen (fehlgeschlagenen) Läufen Konflikte verursachen könnten (z.B. PHP/Redis GPG-Key Konflikte)
+  rm -f /etc/apt/sources.list.d/php-sury.list
+  rm -f /etc/apt/sources.list.d/redis.list
+  rm -f /etc/apt/sources.list.d/docker.list
+  # Entferne deb822 Quellen, falls sie auf leere Dateien verweisen
+  rm -f /etc/apt/sources.list.d/debian.sources
 }
 
 install_common_dependencies() {
-  info "System aktualisieren und Basis-Pakete installieren..."
-  run_logged "apt-get update -y"
-  run_logged "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
-  # Installiere kritische Tools (curl, gpg) vor dem Hinzufügen externer Repositories
-  run_logged "apt-get install -y curl wget gnupg2 gpg ca-certificates lsb-release apt-transport-https unzip tar git pwgen software-properties-common"
+  info "System aktualisieren und Basis-Pakete installieren..."
+  run_logged "apt-get update -y"
+  run_logged "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
+  # Installiere kritische Tools (curl, gpg) vor dem Hinzufügen externer Repositories
+  run_logged "apt-get install -y curl wget gnupg2 gpg ca-certificates lsb-release apt-transport-https unzip tar git pwgen software-properties-common"
 }
 
 check_dependencies() {
-  # Prüft, ob curl und gpg vorhanden sind, bevor wir sie verwenden
-  if ! command -v curl >/dev/null 2>&1 || ! command -v gpg >/dev/null 2>&1; then
-    error "Kritische Abhängigkeiten (curl oder gpg) fehlen nach der Installation. Installationsfortsetzung nicht möglich."
-    exit 1
-  fi
+  # Prüft, ob curl und gpg vorhanden sind, bevor wir sie verwenden
+  if ! command -v curl >/dev/null 2>&1 || ! command -v gpg >/dev/null 2>&1; then
+    error "Kritische Abhängigkeiten (curl oder gpg) fehlen nach der Installation. Installationsfortsetzung nicht möglich."
+    exit 1
+  fi
 }
 
 install_php_and_redis_repo() {
-  info "Repositorys für PHP (sury) und Redis hinzufügen..."
-  
-  # Füge PHP Repository hinzu
-  run_logged "curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury-php.gpg"
-  echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php-sury.list
-  
-  # Füge Redis Repository hinzu
-  run_logged "curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis.gpg"
-  echo "deb [signed-by=/usr/share/keyrings/redis.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/redis.list
+  info "Repositorys für PHP (sury) und Redis hinzufügen..."
+  
+  # Füge PHP Repository hinzu
+  run_logged "curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury-php.gpg"
+  echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php-sury.list
+  
+  # Füge Redis Repository hinzu
+  run_logged "curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis.gpg"
+  echo "deb [signed-by=/usr/share/keyrings/redis.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/redis.list
 
-  # Update nach Hinzufügen der Repositories
-  run_logged "apt-get update -y"
+  # Update nach Hinzufügen der Repositories
+  run_logged "apt-get update -y"
 }
 
 install_panel_dependencies() {
-  info "Installiere Panel-Abhängigkeiten (PHP 8.3, MariaDB, Nginx, Redis)..."
-  run_logged "DEBIAN_FRONTEND=noninteractive apt-get install -y php8.3 php8.3-fpm php8.3-cli php8.3-mbstring php8.3-xml php8.3-mysql php8.3-zip php8.3-curl php8.3-bcmath php8.3-gd php8.3-intl mariadb-server nginx redis-server"
-  if ! command -v composer >/dev/null 2>&1; then
-    info "Installiere Composer..."
-    run_logged "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer"
-  fi
+  info "Installiere Panel-Abhängigkeiten (PHP 8.3, MariaDB, Nginx, Redis)..."
+  run_logged "DEBIAN_FRONTEND=noninteractive apt-get install -y php8.3 php8.3-fpm php8.3-cli php8.3-mbstring php8.3-xml php8.3-mysql php8.3-zip php8.3-curl php8.3-bcmath php8.3-gd php8.3-intl mariadb-server nginx redis-server"
+  if ! command -v composer >/dev/null 2>&1; then
+    info "Installiere Composer..."
+    run_logged "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer"
+  fi
 }
 
 install_mariadb_setup() {
-  info "Konfiguriere MariaDB: Datenbank 'panel' und Benutzer 'pterodactyl'..."
-  cat > /tmp/panel_db_setup.sql <<EOF
+  info "Konfiguriere MariaDB: Datenbank 'panel' und Benutzer 'pterodactyl'..."
+  cat > /tmp/panel_db_setup.sql <<EOF
 CREATE DATABASE IF NOT EXISTS panel;
 CREATE USER IF NOT EXISTS 'pterodactyl'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
 GRANT ALL PRIVILEGES ON panel.* TO 'pterodactyl'@'127.0.0.1';
 FLUSH PRIVILEGES;
 EOF
-  run_logged "mysql < /tmp/panel_db_setup.sql" || error "MariaDB Setup fehlgeschlagen"
-  rm -f /tmp/panel_db_setup.sql
+  run_logged "mysql < /tmp/panel_db_setup.sql" || error "MariaDB Setup fehlgeschlagen"
+  rm -f /tmp/panel_db_setup.sql
 }
 
 install_panel_files() {
-  info "Hole Pterodactyl Panel Release und konfiguriere..."
-  mkdir -p /var/www/pterodactyl && cd /var/www/pterodactyl || return 1
-  run_logged "curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz"
-  run_logged "tar -xzf panel.tar.gz --strip-components=0"
-  run_logged "rm -f panel.tar.gz"
-  run_logged "cp .env.example .env"
-  run_logged "chown -R www-data:www-data /var/www/pterodactyl"
-  run_logged "chmod -R 755 storage bootstrap/cache || true"
-  info "Composer install (kann dauern)..."
-  run_logged "cd /var/www/pterodactyl && COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader"
-  run_logged "cd /var/www/pterodactyl && php artisan key:generate --force"
-  run_logged "cd /var/www/pterodactyl && php artisan p:environment:database --host=127.0.0.1 --port=3306 --database=panel --username=pterodactyl --password='${DB_PASSWORD}' || true"
-  run_logged "cd /var/www/pterodactyl && php artisan p:environment:mail --driver=mail || true"
-  run_logged "cd /var/www/pterodactyl && php artisan p:environment:setup --url=\"https://${PANEL_DOMAIN}\" --timezone=\"${APP_TIMEZONE}\" --cache=redis --session=redis --queue=redis || true"
-  run_logged "cd /var/www/pterodactyl && php artisan migrate --seed --force"
-  run_logged "cd /var/www/pterodactyl && php artisan p:user:make --email='${ADMIN_EMAIL}' --username='${ADMIN_USERNAME}' --name-first='${ADMIN_FIRST}' --name-last='${ADMIN_LAST}' --password='${ADMIN_PASS}' --admin=1 || true"
+  info "Hole Pterodactyl Panel Release und konfiguriere..."
+  mkdir -p /var/www/pterodactyl && cd /var/www/pterodactyl || return 1
+  run_logged "curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz"
+  run_logged "tar -xzf panel.tar.gz --strip-components=0"
+  run_logged "rm -f panel.tar.gz"
+  run_logged "cp .env.example .env"
+  run_logged "chown -R www-data:www-data /var/www/pterodactyl"
+  run_logged "chmod -R 755 storage bootstrap/cache || true"
+  info "Composer install (kann dauern)..."
+  run_logged "cd /var/www/pterodactyl && COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader"
+  run_logged "cd /var/www/pterodactyl && php artisan key:generate --force"
+  run_logged "cd /var/www/pterodactyl && php artisan p:environment:database --host=127.0.0.1 --port=3306 --database=panel --username=pterodactyl --password='${DB_PASSWORD}' || true"
+  run_logged "cd /var/www/pterodactyl && php artisan p:environment:mail --driver=mail || true"
+  run_logged "cd /var/www/pterodactyl && php artisan p:environment:setup --url=\"https://${PANEL_DOMAIN}\" --timezone=\"${APP_TIMEZONE}\" --cache=redis --session=redis --queue=redis || true"
+  run_logged "cd /var/www/pterodactyl && php artisan migrate --seed --force"
+  run_logged "cd /var/www/pterodactyl && php artisan p:user:make --email='${ADMIN_EMAIL}' --username='${ADMIN_USERNAME}' --name-first='${ADMIN_FIRST}' --name-last='${ADMIN_LAST}' --password='${ADMIN_PASS}' --admin=1 || true"
 }
 
 install_nginx_site() {
-  info "Erstelle Nginx site für ${PANEL_DOMAIN} (HTTP)..."
-  cat >/etc/nginx/sites-available/pterodactyl.conf <<'NGINX'
+  info "Erstelle Nginx site für ${PANEL_DOMAIN} (HTTP)..."
+  cat >/etc/nginx/sites-available/pterodactyl.conf <<'NGINX'
 server {
-    listen 80;
-    server_name __PANEL_DOMAIN__;
-    root /var/www/pterodactyl/public;
-    index index.php;
+    listen 80;
+    server_name __PANEL_DOMAIN__;
+    root /var/www/pterodactyl/public;
+    index index.php;
 
-    access_log /var/log/nginx/pterodactyl.app-access.log;
-    error_log  /var/log/nginx/pterodactyl.app-error.log error;
+    access_log /var/log/nginx/pterodactyl.app-access.log;
+    error_log  /var/log/nginx/pterodactyl.app-error.log error;
 
-    client_max_body_size 100m;
-    client_body_timeout 120s;
-    sendfile off;
+    client_max_body_size 100m;
+    client_body_timeout 120s;
+    sendfile off;
 
-    location / { try_files $uri $uri/ /index.php?$query_string; }
-    location ~ \.php$ {
-        include fastcgi_params;
-        fastcgi_split_path_info ^(.+\.php)(/.+)$;
-        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        fastcgi_param HTTP_PROXY "";
-        fastcgi_intercept_errors off;
-        include /etc/nginx/fastcgi_params;
-    }
-    location ~ /\.ht { deny all; }
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param HTTP_PROXY "";
+        fastcgi_intercept_errors off;
+        include /etc/nginx/fastcgi_params;
+    }
+    location ~ /\.ht { deny all; }
 }
 NGINX
-  sed -i "s|__PANEL_DOMAIN__|${PANEL_DOMAIN}|g" /etc/nginx/sites-available/pterodactyl.conf
-  rm -f /etc/nginx/sites-enabled/default
-  ln -sf /etc/nginx/sites-available/pterodactyl.conf /etc/nginx/sites-enabled/pterodactyl.conf
-  run_logged "systemctl restart nginx || true"
+  sed -i "s|__PANEL_DOMAIN__|${PANEL_DOMAIN}|g" /etc/nginx/sites-available/pterodactyl.conf
+  rm -f /etc/nginx/sites-enabled/default
+  ln -sf /etc/nginx/sites-available/pterodactyl.conf /etc/nginx/sites-enabled/pterodactyl.conf
+  run_logged "systemctl restart nginx || true"
 }
 
 install_queue_worker() {
-  info "Erstelle pteroq systemd service..."
-  cat >/etc/systemd/system/pteroq.service <<'SERVICE'
+  info "Erstelle pteroq systemd service..."
+  cat >/etc/systemd/system/pteroq.service <<'SERVICE'
 [Unit]
 Description=Pterodactyl Queue Worker
 After=redis-server.service
@@ -228,26 +228,26 @@ RestartSec=5s
 [Install]
 WantedBy=multi-user.target
 SERVICE
-  run_logged "systemctl enable --now pteroq.service"
+  run_logged "systemctl enable --now pteroq.service"
 }
 
 install_docker() {
-  info "Installiere Docker CE (get.docker.com)..."
-  run_logged "curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker.gpg"
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
-  run_logged "apt-get update -y"
-  run_logged "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
-  run_logged "systemctl enable --now docker"
+  info "Installiere Docker CE (get.docker.com)..."
+  run_logged "curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker.gpg"
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+  run_logged "apt-get update -y"
+  run_logged "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
+  run_logged "systemctl enable --now docker"
 }
 
 install_wings_binary() {
-  info "Installiere Wings binary..."
-  mkdir -p /etc/pterodactyl
-  arch="$(uname -m)"
-  if [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ]; then arch="amd64"; else arch="arm64"; fi
-  run_logged "curl -Lo /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_${arch}"
-  run_logged "chmod +x /usr/local/bin/wings"
-  cat >/etc/systemd/system/wings.service <<'WINGS'
+  info "Installiere Wings binary..."
+  mkdir -p /etc/pterodactyl
+  arch="$(uname -m)"
+  if [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ]; then arch="amd64"; else arch="arm64"; fi
+  run_logged "curl -Lo /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_${arch}"
+  run_logged "chmod +x /usr/local/bin/wings"
+  cat >/etc/systemd/system/wings.service <<'WINGS'
 [Unit]
 Description=Pterodactyl Wings Daemon
 After=docker.service
@@ -268,22 +268,22 @@ RestartSec=5s
 [Install]
 WantedBy=multi-user.target
 WINGS
-  warn "Wings binary & service bereit. Konfigurationsdatei /etc/pterodactyl/config.yml muss vom Panel erzeugt werden."
+  warn "Wings binary & service bereit. Konfigurationsdatei /etc/pterodactyl/config.yml muss vom Panel erzeugt werden."
 }
 
 suggest_firewall() {
-  cecho "\n${YELLOW}Firewall Hinweis: Öffnen Sie Ports:${RESET}"
-  cecho " - 80/443 TCP (Panel)"
-  cecho " - 8080 TCP (Wings <-> Panel)"
-  cecho " - 2022 TCP (SFTP Wings)"
+  cecho "\n${YELLOW}Firewall Hinweis: Öffnen Sie Ports:${RESET}"
+  cecho " - 80/443 TCP (Panel)"
+  cecho " - 8080 TCP (Wings <-> Panel)"
+  cecho " - 2022 TCP (SFTP Wings)"
 }
 
 ### MAIN EXECUTION
 
 # Validate running as root
 if [ "$(id -u)" -ne 0 ]; then
-  error "Dieses Skript muss als root ausgeführt werden."
-  exit 1
+  error "Dieses Skript muss als root ausgeführt werden."
+  exit 1
 fi
 
 info "Installation gestartet: ${INSTALL_START_TS}"
@@ -295,42 +295,42 @@ clean_apt_sources
 
 # 2. SELEKTION
 if ! $INSTALL_PANEL && ! $INSTALL_WINGS; then
-  cecho "\n======================================================="
-  cecho "  Pterodactyl Installation (Panel & Wings) auf Debian 13"
-  cecho "======================================================="
-  cecho "Was möchten Sie auf dieser VM installieren?"
-  cecho "1) Pterodactyl Panel (Web, DB, Redis)"
-  cecho "2) Pterodactyl Wings (Docker Host)"
-  cecho "3) Beides (All-in-One)"
-  read -r -p "Geben Sie die Zahl der gewünschten Option ein (1-3): " CHOICE
-  case "$CHOICE" in
-    1) INSTALL_PANEL=true ;;
-    2) INSTALL_WINGS=true ;;
-    3) INSTALL_PANEL=true; INSTALL_WINGS=true ;;
-    *) error "Ungültige Auswahl."; exit 1 ;;
-  esac
+  cecho "\n======================================================="
+  cecho "  Pterodactyl Installation (Panel & Wings) auf Debian 13"
+  cecho "======================================================="
+  cecho "Was möchten Sie auf dieser VM installieren?"
+  cecho "1) Pterodactyl Panel (Web, DB, Redis)"
+  cecho "2) Pterodactyl Wings (Docker Host)"
+  cecho "3) Beides (All-in-One)"
+  read -r -p "Geben Sie die Zahl der gewünschten Option ein (1-3): " CHOICE
+  case "$CHOICE" in
+    1) INSTALL_PANEL=true ;;
+    2) INSTALL_WINGS=true ;;
+    3) INSTALL_PANEL=true; INSTALL_WINGS=true ;;
+    *) error "Ungültige Auswahl."; exit 1 ;;
+  esac
 else
-  info "Installationsmodus über CLI-Flags: PANEL=$INSTALL_PANEL, WINGS=$INSTALL_WINGS"
+  info "Installationsmodus über CLI-Flags: PANEL=$INSTALL_PANEL, WINGS=$INSTALL_WINGS"
 fi
 
 # 3. PANEL EINGABEN SAMMELN
 if $INSTALL_PANEL; then
-  if [ -z "$PANEL_DOMAIN" ] || [ -z "$DB_PASSWORD" ] || [ -z "$ADMIN_EMAIL" ] || [ -z "$ADMIN_USERNAME" ] || [ -z "$ADMIN_PASS" ]; then
-    cecho "\n--- Panel Eingaben (interaktiv) ---"
-    read -r -p "FQDN (Panel Domain): " PANEL_DOMAIN
-    read -r -p "DB Passwort: " DB_PASSWORD
-    read -r -p "Admin Email: " ADMIN_EMAIL
-    read -r -p "Admin Username: " ADMIN_USERNAME
-    read -r -p "Admin Vorname: " ADMIN_FIRST
-    read -r -p "Admin Nachname: " ADMIN_LAST
-    read -r -p "Admin Passwort: " ADMIN_PASS
-    read -r -p "Zeitzone (z.B. Europe/Berlin): " APP_TIMEZONE
-  else
-    info "Panel-Variablen wurden per CLI übergeben."
-  fi
-  ! valid_domain "$PANEL_DOMAIN" && { error "Ungültige Domain: $PANEL_DOMAIN"; exit 1; }
-  ! valid_email "$ADMIN_EMAIL" && { error "Ungültige Email: $ADMIN_EMAIL"; exit 1; }
-  ! valid_password "$ADMIN_PASS" && { error "Admin-Passwort zu schwach"; exit 1; }
+  if [ -z "$PANEL_DOMAIN" ] || [ -z "$DB_PASSWORD" ] || [ -z "$ADMIN_EMAIL" ] || [ -z "$ADMIN_USERNAME" ] || [ -z "$ADMIN_PASS" ]; then
+    cecho "\n--- Panel Eingaben (interaktiv) ---"
+    read -r -p "FQDN (Panel Domain): " PANEL_DOMAIN
+    read -r -p "DB Passwort: " DB_PASSWORD
+    read -r -p "Admin Email: " ADMIN_EMAIL
+    read -r -p "Admin Username: " ADMIN_USERNAME
+    read -r -p "Admin Vorname: " ADMIN_FIRST
+    read -r -p "Admin Nachname: " ADMIN_LAST
+    read -r -p "Admin Passwort: " ADMIN_PASS
+    read -r -p "Zeitzone (z.B. Europe/Berlin): " APP_TIMEZONE
+  else
+    info "Panel-Variablen wurden per CLI übergeben."
+  fi
+  ! valid_domain "$PANEL_DOMAIN" && { error "Ungültige Domain: $PANEL_DOMAIN"; exit 1; }
+  ! valid_email "$ADMIN_EMAIL" && { error "Ungültige Email: $ADMIN_EMAIL"; exit 1; }
+  ! valid_password "$ADMIN_PASS" && { error "Admin-Passwort zu schwach"; exit 1; }
 fi
 
 # 4. INSTALLATION STARTEN
@@ -341,28 +341,28 @@ check_dependencies
 install_php_and_redis_repo 
 
 if $INSTALL_PANEL; then
-  install_panel_dependencies
-  install_mariadb_setup
-  install_panel_files
-  install_nginx_site
-  install_queue_worker
+  install_panel_dependencies
+  install_mariadb_setup
+  install_panel_files
+  install_nginx_site
+  install_queue_worker
 fi
 
 if $INSTALL_WINGS; then
-  install_docker
-  install_wings_binary
+  install_docker
+  install_wings_binary
 fi
 
 # 5. FINAL
 cecho "\n======================================================="
 cecho "${GREEN}✅ Installation der ausgewählten Komponenten abgeschlossen.${RESET}"
 if $INSTALL_PANEL; then
-  cecho "Panel: https://${PANEL_DOMAIN}"
-  cecho "Admin: ${ADMIN_USERNAME} / ${ADMIN_EMAIL}"
+  cecho "Panel: https://${PANEL_DOMAIN}"
+  cecho "Admin: ${ADMIN_USERNAME} / ${ADMIN_EMAIL}"
 fi
 if $INSTALL_WINGS; then
-  cecho "\nWings installiert. Bitte Konfigurationsdatei /etc/pterodactyl/config.yml vom Panel erzeugen und einfügen."
-  cecho "Dann starten: systemctl enable --now wings"
+  cecho "\nWings installiert. Bitte Konfigurationsdatei /etc/pterodactyl/config.yml vom Panel erzeugen und einfügen."
+  cecho "Dann starten: systemctl enable --now wings"
 fi
 suggest_firewall
 cecho "Logs: ${LOGFILE}"
