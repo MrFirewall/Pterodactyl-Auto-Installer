@@ -1,113 +1,127 @@
 # 🚀 Pterodactyl Auto-Installer für **Debian 13 (Bookworm)**
 
-Willkommen! Dieses Skript hilft dir dabei, **Pterodactyl schnell, sauber und vollautomatisch** auf Debian 13 zu installieren. Egal ob getrenntes Setup (Panel + Wings) oder alles auf einer Maschine – hier bist du richtig.
+Willkommen! Dieses Skript installiert **Pterodactyl schnell, sauber, interaktiv und vollautomatisch** auf Debian 13 – inklusive **farbiger Fehlerbehandlung, Eingabevalidierung, Auto‑Update und vollständigem Logging**.
+
+Es unterstützt:
+- 🖥️ **Panel-Installation** (PHP 8.3, Redis, MariaDB, Nginx)
+- 🐦 **Wings-Installation** (Docker CE + Wings-Daemon)
+- 🔄 **All‑in‑One‑Setup**
+- ⚙️ Interaktive Menüs mit **dialog**
+- 🧪 Validierte Eingaben (Domain, E‑Mail, Passwörter)
+- 📄 Logfile unter: `/var/log/pteroinstall.log`
+- 🆕 Automatisches Self‑Update des Installers
 
 ---
 
-## ⚠️ Wichtige Hinweise (Bitte zuerst lesen!)
+## ⚠️ Wichtige Hinweise
 
-1. **Auf eigene Gefahr!**
-   Das Skript greift tief ins System ein (MariaDB, Docker, Nginx usw.). Nutze es mit Bedacht.
+1. **Nutzung auf eigene Gefahr.**  
+   Das Skript verändert zentrale Systemkomponenten (Nginx, Docker, MariaDB usw.).
 
-2. **Nur auf frischen Servern!**
-   Bereits konfigurierte Systeme können zu Konflikten führen.
+2. **Nur für frische Systeme empfohlen!**  
+   Bereits konfigurierte Server können Probleme verursachen.
 
-3. **Nur Debian 13 (Bookworm)!**
-   Andere Versionen werden *nicht* unterstützt.
+3. **Unterstützt ausschließlich Debian 13 (Bookworm).**
 
-4. **Root- oder Sudo-Rechte nötig!**
+4. **Erfordert Root‑ oder Sudo‑Rechte.**
 
 ---
 
 ## 💻 Installation
 
-Führe den folgenden Befehl als normaler Benutzer mit `sudo`-Rechten aus:
+Führe diesen Befehl als Benutzer mit Sudo-Rechten aus:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/MrFirewall/Pterodactyl-Auto-Installer/9a27d90d326206d6b532874a7cb47c74a7918d15/install_pterodactyl.sh | sudo bash
 ```
 
-Das Skript lädt die Datei herunter und startet automatisch die Installation.
+Das Skript startet anschließend automatisch, führt Updates durch und prüft optional, ob eine neuere Version des Installers verfügbar ist.
 
 ---
 
 ## ✨ Installationsoptionen
-
-Beim Start fragt dich das Skript, was eingerichtet werden soll:
+Beim Start kannst du auswählen:
 
 ### **1️⃣ Pterodactyl Panel installieren**
-
-* Installiert: **Nginx**, **MariaDB**, **PHP 8.3**, **Redis**
-* Du benötigst eine Domain (FQDN) für den Panel-Zugriff.
-* Das Skript richtet automatisch ein:
-
-  * Datenbank + Benutzer
-  * `.env` Datei
-  * Admin-Account
+- Installiert: **PHP 8.3**, **Nginx**, **MariaDB**, **Redis**, **Composer**
+- Automatische Einrichtung von:
+  - Datenbank & Benutzer
+  - `.env`‑Konfiguration
+  - Admin‑Benutzer
+  - Queue‑Worker (systemd)
 
 ### **2️⃣ Pterodactyl Wings installieren**
+- Installiert: **Docker CE** + **Wings Daemon**
+- Wings wird bereitgestellt, aber **nicht automatisch gestartet**, bis eine gültige `config.yml` eingetragen wurde.
 
-* Installiert: **Docker CE**, **Wings Daemon**
-* Perfekt zur Skalierung: beliebig viele Wings-Server möglich
-
-### **3️⃣ Beides auf einem Server installieren**
-
-* Panel + Wings auf derselben Maschine
-* Praktisch für kleine Projekte oder Tests
+### **3️⃣ Beide Komponenten installieren**
+Perfekt für kleine Projekte, Testsysteme oder All‑in‑One‑Setups.
 
 ---
 
-## 🛠️ Manuelle Schritte nach der Installation
+## 🛠️ Nach der Installation
 
-### 🔧 Wings mit dem Panel verbinden (Option 2 oder 3)
+### 🔧 Wings mit dem Panel verbinden
+Wings wird erst gestartet, nachdem die Konfiguration aus dem Panel eingetragen wurde.
 
-Wings wird installiert, aber **nicht direkt gestartet**, da es zuerst eine gültige Konfiguration braucht.
-
-So richtest du Wings ein:
-
-1. Öffne dein Panel im Browser.
-2. Gehe zu **Knoten** → wähle deinen Node oder erstelle einen neuen.
-3. Unter **Konfiguration** findest du den Codeblock für die Datei `config.yml`.
-4. Erstelle die Datei auf deinem Wings-Server:
-
-```bash
-nano /etc/pterodactyl/config.yml
-```
-
-5. Füge den Konfigurationsblock ein und speichere.
-
-6. Prüfe, ob diese Ports offen sind:
-
-   * **8080/TCP** – Panel ↔ Wings Kommunikation
-   * **2022/TCP** – SFTP für Benutzer
-
+1. Öffne dein Panel.
+2. Navigiere zu **Nodes/Knoten** → Neue Konfiguration erzeugen.
+3. Kopiere die generierte `config.yml`.
+4. Erstelle die Datei:
+   ```bash
+   nano /etc/pterodactyl/config.yml
+   ```
+5. Speichere die Konfiguration.
+6. Öffne folgende Ports:
+   - **8080/TCP** – Kommunikation Panel ↔ Wings
+   - **2022/TCP** – SFTP für Benutzer
 7. Starte Wings:
-
-```bash
-systemctl enable --now wings
-```
+   ```bash
+   systemctl enable --now wings
+   ```
 
 ### 🌐 Zuweisungen (Allocations)
-
-Im Panel musst du noch IPs und Ports definieren, die der Server später nutzen darf.
-Ohne diese Zuweisungen können keine Gameserver gestartet werden.
+Damit Gameserver Ports nutzen können, musst du im Panel **IP‑ und Port‑Zuweisungen** einrichten.
 
 ---
 
-## 📦 Was wird alles installiert?
+## 📦 Installierte Komponenten
 
 | Komponente         | Version              | Beschreibung                                       |
-| ------------------ | -------------------- | -------------------------------------------------- |
-| **Betriebssystem** | Debian 13 (Bookworm) | Stabile Basis für moderne Software                 |
+|-------------------|----------------------|----------------------------------------------------|
+| **Betriebssystem** | Debian 13            | Offiziell unterstützte Umgebung                    |
 | **Nginx**          | aktuell              | Webserver für das Panel                            |
-| **MariaDB**        | aktuell              | Datenbank für Panel-Daten                          |
-| **PHP**            | 8.3                  | Benötigte PHP-Version inkl. aller wichtigen Module |
-| **Redis**          | aktuell              | Cache + Queue-Verarbeitung fürs Panel              |
-| **Docker CE**      | aktuell              | Container-Engine für Gameserver                    |
-| **Wings**          | aktuell              | Pterodactyl Daemon zur Server-Verwaltung           |
+| **MariaDB**        | aktuell              | Panel‑Datenbank                                    |
+| **PHP**            | 8.3                  | Moderne PHP‑Version inkl. aller benötigten Module  |
+| **Redis**          | aktuell              | Cache + Queue System                                |
+| **Docker CE**      | aktuell              | Container‑Runtime für Wings                         |
+| **Wings**          | aktuell              | Pterodactyl Daemon zur Game‑Serververwaltung       |
 
 ---
 
-## 🎉 Viel Spaß mit deinem Pterodactyl-Setup!
+## 🧩 Erweiterte Features dieses Installers
 
-Wenn du Feedback hast oder Fehler findest, melde dich gern im GitHub-Repository.
+### ✔️ Farbige Fehler- & Statusausgaben
+Alle Aktionen werden übersichtlich im Terminal dargestellt.
+
+### ✔️ Eingabevalidierung
+- Domain → FQDN‑Prüfung
+- E‑Mail → RegEx‑Validierung
+- Passwort → Mindestlänge + Komplexität
+
+### ✔️ Externes Logfile
+Komplette Ausgabe unter:
+```
+/var/log/pteroinstall.log
+```
+
+### ✔️ Auto‑Update
+Der Installer prüft beim Start automatisch, ob eine neue Version vorliegt.
+Wenn ja, wirst du gefragt, ob du aktualisieren möchtest.
+
+---
+
+## 🎉 Viel Erfolg mit deinem Pterodactyl‑Setup!
+
+Feedback, Wünsche oder Verbesserungen?  
+Erstelle gerne ein Issue oder einen Pull‑Request im GitHub‑Repository!
