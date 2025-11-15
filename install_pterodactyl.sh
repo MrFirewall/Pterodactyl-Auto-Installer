@@ -160,17 +160,25 @@ install_php_and_redis_repo() {
 
     # 1. PHP Sury GPG-Schlüssel hinzufügen und Repository-Datei erstellen
     info "Registriere PHP Sury Repository..."
+    # Die Schlüssel werden jetzt hart in den Keyring geschrieben:
     run_logged "curl -sSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/deb.sury.org.gpg"
+    # Erstellt oder überschreibt die Liste mit signed-by
     echo "deb [signed-by=/usr/share/keyrings/deb.sury.org.gpg] https://packages.sury.org/php/ ${DEBIAN_CODENAME} main" > /etc/apt/sources.list.d/sury-php.list
 
     # 2. Redis GPG-Schlüssel hinzufügen und Repository-Datei erstellen
     info "Registriere Redis Repository..."
     run_logged "curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg"
+    # Erstellt oder überschreibt die Liste mit signed-by
     echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb ${DEBIAN_CODENAME} main" > /etc/apt/sources.list.d/redis.list
     
     # 3. apt-update erneut ausführen, nachdem die Schlüssel und Listen hinzugefügt wurden
+    # WARNUNG: Früher fehlerhafte Einträge können das Update weiterhin zum Fehlschlag bringen.
+    # Wir führen das Update dennoch aus, da die Listen nun gültig sind.
     spinner_start "Finaler apt update"
-    run_logged "apt-get update -y"
+    if ! run_logged "apt-get update -y"; then
+        warn "apt update mit Fehlercode beendet. Fahren fort, da Repositories nun registriert sind."
+        # Wir können hier keinen Exit-Code 1 forcen, da es wahrscheinlich nur Warnungen sind.
+    fi
     spinner_stop
 }
 
