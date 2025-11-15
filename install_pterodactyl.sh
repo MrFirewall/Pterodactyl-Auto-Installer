@@ -6,6 +6,9 @@
 
 set -o pipefail
 
+### keep original args for restart on update
+ORIG_ARGS=("$@")
+
 ### CONFIG
 SCRIPT_VERSION="1.0.0"
 LOGFILE="/var/log/pteroinstall.log"
@@ -73,6 +76,27 @@ valid_password() { local p="$1"; [[ ${#p} -ge 8 && "$p" =~ [A-Z] && "$p" =~ [a-z
 spinner_start() { printf "%s" "$1"; (while true; do for s in '/-\\|'; do printf "\b%s" "$s"; sleep 0.12; done; done) & SPINNER_PID=$!; disown; }
 spinner_stop() { if [ -n "$SPINNER_PID" ] && kill -0 "$SPINNER_PID" 2>/dev/null; then kill "$SPINNER_PID" 2>/dev/null; wait "$SPINNER_PID" 2>/dev/null || true; printf "\b \n"; unset SPINNER_PID; fi }
 
+### CLI ARG PARSING (must happen BEFORE interactive selection)
+for arg in "$@"; do
+  case $arg in
+    --panel) INSTALL_PANEL=true ;;
+    --wings) INSTALL_WINGS=true ;;
+    --all) INSTALL_PANEL=true; INSTALL_WINGS=true ;;
+    --domain=*) PANEL_DOMAIN="${arg#*=}" ;;
+    --db-pass=*) DB_PASSWORD="${arg#*=}" ;;
+    --email=*) ADMIN_EMAIL="${arg#*=}" ;;
+    --user=*) ADMIN_USERNAME="${arg#*=}" ;;
+    --admin-pass=*) ADMIN_PASS="${arg#*=}" ;;
+    --first=*) ADMIN_FIRST="${arg#*=}" ;;
+    --last=*) ADMIN_LAST="${arg#*=}" ;;
+    --tz=*) APP_TIMEZONE="${arg#*=}" ;;
+    --yes|-y) AUTO_YES=true ;;
+    --no-update) NO_SELF_UPDATE=true ;;
+    --help|-h) echo "Usage: $0 [--panel] [--wings] [--all] [--domain=...] [--db-pass=...] [--email=...] [--user=...] [--admin-pass=...] [--first=...] [--last=...] [--tz=...] [--yes] [--no-update]"; exit 0 ;;
+    *) ;;
+  esac
+done
+
 ### SELF-UPDATE
 self_update() {
   [ "$NO_SELF_UPDATE" = true ] && { info "Self-update übersprungen (--no-update)."; return; }
@@ -83,12 +107,12 @@ self_update() {
   if [ "$newsum" != "$oldsum" ]; then
     if [ "$AUTO_YES" = true ]; then
       info "Auto-Update: neue Version automatisch übernehmen."
-      mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "$@"
+      mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "${ORIG_ARGS[@]}"
     else
       read -r -p "Update für Installer verfügbar. Jetzt aktualisieren? [y/N]: " resp
       if [[ "$resp" =~ ^[Yy]$ ]]; then
         info "Installer wird aktualisiert..."
-        mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "$@"
+        mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "${ORIG_ARGS[@]}"
       else
         warn "Benutzer hat Update abgelehnt."; rm -f /tmp/installer.new
       fi
@@ -270,7 +294,7 @@ info "Installation gestartet: ${INSTALL_START_TS}"
 
 # Self-update check
 if [ "$NO_SELF_UPDATE" != true ]; then
-  self_update "$@"
+  self_update "${ORIG_ARGS[@]}"
 fi
 
 # If no flags given, show basic selection
