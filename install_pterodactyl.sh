@@ -3,11 +3,8 @@
 # Features:
 # - Interaktive Dialog-Menüs (dialog)
 # - Farbige Status- & Fehlerausgaben
-# - Eingabevalidierung (Domain, Email, Passwörter)
 # - Externes Logfile (/var/log/pteroinstall.log)
 # - Modularer Aufbau (Panel, Wings, All-in-one)
-# - Auto-Update (Vergleich mit GitHub raw URL)
-# - Flags supported: --panel, --wings, --all, --yes, --no-update
 
 set -o pipefail
 
@@ -25,7 +22,8 @@ OK="${GREEN}[✔]${RESET}"; ERR="${RED}[✘]${RESET}"; INFO="${CYAN}[➜]${RESET
 # Defaults
 AUTO_YES=false
 NO_SELF_UPDATE=false
-DEBIAN_CODENAME="$(lsb_release -cs 2>/dev/null || echo bookworm)"
+# Verwende trixie (Debian 13) als Standard-Codename
+DEBIAN_CODENAME="trixie"
 
 # Install flags
 INSTALL_PANEL=false
@@ -71,7 +69,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-### PARSE ARGS
+### PARSE ARGS (Optional: für nicht-interaktive Ausführung)
 while [ $# -gt 0 ]; do
     case "$1" in
         --panel) INSTALL_PANEL=true; shift ;;
@@ -88,8 +86,8 @@ done
 ensure_dialog() {
     if ! command -v dialog >/dev/null 2>&1; then
         info "Dialog nicht gefunden — installiere dialog..."
-        apt-get update -y >>"$LOGFILE" 2>&1
-        apt-get install -y dialog >>"$LOGFILE" 2>&1 || { error "Konnte dialog nicht installieren."; exit 1; }
+        run_logged "apt-get update -y"
+        run_logged "apt-get install -y dialog" || { error "Konnte dialog nicht installieren."; exit 1; }
     fi
 }
 
@@ -151,20 +149,39 @@ install_common_dependencies() {
     run_logged "apt-get update -y"
     run_logged "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
     spinner_stop
-    run_logged "apt-get install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https unzip tar git pwgen software-properties-common"
+    
+    # software-properties-common entfernt.
+    # gnupg2 ist in Debian 13 'gnupg'
+    run_logged "apt-get install -y curl wget gnupg ca-certificates lsb-release apt-transport-https unzip tar git pwgen"
 }
 
 install_php_and_redis_repo() {
     info "Füge PHP 8.3 und Redis Repositories hinzu..."
-    [ ! -f /etc/apt/sources.list.d/sury-php.list ] && echo "deb https://packages.sury.org/php/ ${DEBIAN_CODENAME} main" > /etc/apt/sources.list.d/sury-php.list
-    [ ! -f /etc/apt/sources.list.d/redis.list ] && echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb ${DEBIAN_CODENAME} main" > /etc/apt/sources.list.d/redis.list
+
+    # 1. PHP Sury GPG-Schlüssel hinzufügen und Repository-Datei erstellen
+    info "Registriere PHP Sury Repository..."
+    run_logged "curl -sSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/deb.sury.org.gpg"
+    echo "deb [signed-by=/usr/share/keyrings/deb.sury.org.gpg] https://packages.sury.org/php/ ${DEBIAN_CODENAME} main" > /etc/apt/sources.list.d/sury-php.list
+
+    # 2. Redis GPG-Schlüssel hinzufügen und Repository-Datei erstellen
+    info "Registriere Redis Repository..."
+    run_logged "curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg"
+    echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb ${DEBIAN_CODENAME} main" > /etc/apt/sources.list.d/redis.list
+    
+    # 3. apt-update erneut ausführen, nachdem die Schlüssel und Listen hinzugefügt wurden
+    spinner_start "Finaler apt update"
     run_logged "apt-get update -y"
+    spinner_stop
 }
 
 ### PANEL MODULES
 install_panel_dependencies() {
     info "Installiere Panel-Abhängigkeiten..."
-    run_logged "apt-get install -y php8.3 php8.3-fpm php8.3-cli php8.3-mbstring php8.3-xml php8.3-mysql php8.3-zip php8.3-curl php8.3-bcmath php8.3-gd php8.3-intl mariadb-server nginx redis-server"
+    # MariaDB, NGINX, PHP-Module
+    run_logged "apt-get install -y mariadb-server nginx redis-server"
+    run_logged "apt-get install -y php8.3 php8.3-fpm php8.3-cli php8.3-mbstring php8.3-xml php8.3-mysql php8.3-zip php8.3-curl php8.3-bcmath php8.3-gd php8.3-intl"
+    
+    # Composer
     [ ! -x "$(command -v composer)" ] && run_logged "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer"
 }
 
@@ -201,7 +218,7 @@ install_panel_files() {
 
     run_logged "cd /var/www/pterodactyl && php artisan key:generate --force"
     run_logged "cd /var/www/pterodactyl && php artisan p:environment:database --host=127.0.0.1 --port=3306 --database=panel --username=pterodactyl --password='${DB_PASSWORD}' || true"
-    run_logged "cd /var/www/pterodactyl && php artisan p:environment:setup --url=\"https://${PANEL_DOMAIN}\" --timezone=\"${APP_TIMEZONE}\" --cache=redis --session=redis --queue=redis || true"
+    run_logged "cd /var/www/pterodactyl && php artisan p:environment:setup --url=\"http://${PANEL_DOMAIN}\" --timezone=\"${APP_TIMEZONE}\" --cache=redis --session=redis --queue=redis || true"
 
     spinner_start "Datenbank migrieren & seed"
     run_logged "cd /var/www/pterodactyl && php artisan migrate --seed --force"
@@ -332,9 +349,12 @@ fi
 
 # Panel form input
 if $INSTALL_PANEL; then
+    # Set default password if missing for form
+    [ -z "$DB_PASSWORD" ] && DB_PASSWORD="$(head -c16 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c16)"
+    
     FORM=$(dialog --stdout --title "Panel Setup" --form "Panel-Einstellungen:" 18 70 12 \
         "Domain:" 1 1 "$PANEL_DOMAIN" 1 28 40 0 \
-        "DB Passwort:" 3 1 "" 3 28 40 0 \
+        "DB Passwort:" 3 1 "$DB_PASSWORD" 3 28 40 0 \
         "Admin Email:" 5 1 "$ADMIN_EMAIL" 5 28 40 0 \
         "Admin Username:" 7 1 "$ADMIN_USERNAME" 7 28 40 0 \
         "Admin Vorname:" 9 1 "$ADMIN_FIRST" 9 28 40 0 \
@@ -345,18 +365,20 @@ if $INSTALL_PANEL; then
 
     ! valid_domain "$PANEL_DOMAIN" && { dialog --msgbox "Ungültige Domain"; clear; exit 1; }
     ! valid_email "$ADMIN_EMAIL" && { dialog --msgbox "Ungültige Email"; clear; exit 1; }
-    ! valid_password "$ADMIN_PASS" && { dialog --msgbox "Passwort zu schwach"; clear; exit 1; }
+    ! valid_password "$ADMIN_PASS" && { dialog --msgbox "Passwort zu schwach (mind. 8 Zeichen, Groß/Klein, Zahl)"; clear; exit 1; }
+    
+    # DB Passwort erneut prüfen, falls Benutzer es gelöscht hat (Fallback zur Generierung, falls möglich)
     [ -z "$DB_PASSWORD" ] && DB_PASSWORD="$(head -c32 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c16)" && warn "DB-Passwort generiert"
 fi
 
 # RUN INSTALLATIONS
-$INSTALL_PANEL && { install_panel_dependencies; install_panel; install_nginx_site; install_queue_worker; }
+$INSTALL_PANEL && { install_panel_dependencies; install_mariadb_setup; install_panel_files; install_nginx_site; install_queue_worker; }
 $INSTALL_WINGS && { install_docker; install_wings_binary; }
 
 # Final Summary
 clear
 echo -e "${GREEN}✅ Installation abgeschlossen${RESET}"
-$INSTALL_PANEL && echo "Panel: https://${PANEL_DOMAIN} | Admin: ${ADMIN_USERNAME} / ${ADMIN_EMAIL}"
+$INSTALL_PANEL && echo "Panel: http://${PANEL_DOMAIN} (Wird durch Reverse Proxy auf HTTPS umgestellt) | Admin: ${ADMIN_USERNAME} / ${ADMIN_EMAIL}"
 $INSTALL_WINGS && echo "Wings installiert. Config muss in /etc/pterodactyl/config.yml gelegt werden."
 suggest_firewall
 echo -e "Logs: ${LOGFILE}"
