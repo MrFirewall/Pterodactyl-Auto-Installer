@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pterodactyl Panel & Wings Installationsskript für Debian 13
-# REINES BASH (Ohne 'dialog') - Robust, CLI-Flag & Fehlerbehebung für Repositories
+# REINES BASH (Ohne 'dialog') - Robust und mit Fehlerbehebung für Repositories
 
 set -o pipefail
 
@@ -65,28 +65,31 @@ on_exit() {
 }
 trap on_exit EXIT
 
-### CLI FLAG PARSING
+### PARSE CLI FLAGS
 for arg in "$@"; do
-    case "$arg" in
+    case $arg in
         --panel) INSTALL_PANEL=true ;;
         --wings) INSTALL_WINGS=true ;;
-        --all)   INSTALL_PANEL=true; INSTALL_WINGS=true ;;
+        --all) INSTALL_PANEL=true; INSTALL_WINGS=true ;;
         --domain=*) PANEL_DOMAIN="${arg#*=}" ;;
         --db-pass=*) DB_PASSWORD="${arg#*=}" ;;
         --email=*) ADMIN_EMAIL="${arg#*=}" ;;
         --user=*) ADMIN_USERNAME="${arg#*=}" ;;
+        --admin-pass=*) ADMIN_PASS="${arg#*=}" ;;
         --first=*) ADMIN_FIRST="${arg#*=}" ;;
         --last=*) ADMIN_LAST="${arg#*=}" ;;
-        --admin-pass=*) ADMIN_PASS="${arg#*=}" ;;
         --tz=*) APP_TIMEZONE="${arg#*=}" ;;
+        --help|-h) echo "Usage: $0 [--panel] [--wings] [--all] --domain=... --db-pass=... --email=... --user=... --admin-pass=..."; exit 0 ;;
+        *) ;;
     esac
 done
 
 ### INSTALLATION FUNKTIONEN START
 
+# --- 0. INSTALLATIONSWAHL ---
 show_selection() {
     if $INSTALL_PANEL || $INSTALL_WINGS; then
-        info "Installationswahl über CLI-Flag erkannt: Panel=${INSTALL_PANEL}, Wings=${INSTALL_WINGS}"
+        info "Installation via CLI-Flags ausgewählt: PANEL=$INSTALL_PANEL, WINGS=$INSTALL_WINGS"
         return
     fi
 
@@ -108,11 +111,10 @@ show_selection() {
     esac
 }
 
-# --- 1. INTERAKTIVE EINGABEN SAMMELN ---
+# --- 1. INTERAKTIVE EINGABEN SAMMELN (nur wenn Panel benötigt wird) ---
 gather_panel_input() {
-    # Wenn CLI alle notwendigen Variablen gesetzt hat, überspringe Eingabe
-    if [[ -n "$PANEL_DOMAIN" && -n "$DB_PASSWORD" && -n "$ADMIN_EMAIL" && -n "$ADMIN_USERNAME" && -n "$ADMIN_FIRST" && -n "$ADMIN_LAST" && -n "$ADMIN_PASS" ]]; then
-        info "Panel-Konfiguration über CLI-Flags erkannt. Interaktive Eingabe übersprungen."
+    if [ -n "$PANEL_DOMAIN" ] && [ -n "$DB_PASSWORD" ] && [ -n "$ADMIN_EMAIL" ] && [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASS" ]; then
+        info "Panel-Variablen bereits über CLI-Flags gesetzt, interaktive Eingabe übersprungen."
         return
     fi
 
@@ -127,13 +129,12 @@ gather_panel_input() {
     read -r -p "Admin Passwort (mind. 8 Zeichen, Groß/Klein, Zahl): " ADMIN_PASS
     read -r -p "Zeitzone (z.B. Europe/Berlin): " APP_TIMEZONE
 
-    # Validierung
     ! [[ "$PANEL_DOMAIN" =~ ^([a-zA-Z0-9][-a-zA-Z0-9]{0,62}\.)+[a-zA-Z]{2,}$ ]] && { error "Ungültige Domain"; exit 1; }
     ! [[ "$ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$ ]] && { error "Ungültige Email"; exit 1; }
     ! [[ ${#ADMIN_PASS} -ge 8 && "$ADMIN_PASS" =~ [A-Z] && "$ADMIN_PASS" =~ [a-z] && "$ADMIN_PASS" =~ [0-9] ]] && { error "Passwort zu schwach (mind. 8 Zeichen, Groß/Klein, Zahl)"; exit 1; }
 }
 
-# --- (Rest des Skripts bleibt unverändert, Module: install_common_dependencies, install_php_and_redis_repo, install_panel_dependencies, install_mariadb_setup, install_panel_files, install_nginx_site, install_queue_worker, install_docker, install_wings_binary, suggest_firewall, MAIN EXECUTION) ---
+# Rest des Skripts bleibt unverändert (install_common_dependencies, install_php_and_redis_repo, install_panel_dependencies, install_mariadb_setup, install_panel_files, install_nginx_site, install_queue_worker, install_docker, install_wings_binary, suggest_firewall, MAIN EXECUTION)
 
 info "Installation gestartet: ${INSTALL_START_TS}"
 show_selection
