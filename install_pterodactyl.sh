@@ -6,6 +6,9 @@
 
 set -o pipefail
 
+### keep original args for restart on update
+ORIG_ARGS=("$@")
+
 ### CONFIG
 SCRIPT_VERSION="1.0.0"
 LOGFILE="/var/log/pteroinstall.log"
@@ -65,26 +68,76 @@ trap_exit() {
 }
 trap trap_exit EXIT
 
-# Validators
+# Simple validators
 valid_domain() { [[ "$1" =~ ^([a-zA-Z0-9][-a-zA-Z0-9]{0,62}\.)+[a-zA-Z]{2,}$ ]]; }
 valid_email() { [[ "$1" =~ ^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$ ]]; }
 valid_password() { local p="$1"; [[ ${#p} -ge 8 && "$p" =~ [A-Z] && "$p" =~ [a-z] && "$p" =~ [0-9] ]]; }
 
-### FUNCTIONS (vollständig)
+spinner_start() { printf "%s" "$1"; (while true; do for s in '/-\\|'; do printf "\b%s" "$s"; sleep 0.12; done; done) & SPINNER_PID=$!; disown; }
+spinner_stop() { if [ -n "$SPINNER_PID" ] && kill -0 "$SPINNER_PID" 2>/dev/null; then kill "$SPINNER_PID" 2>/dev/null; wait "$SPINNER_PID" 2>/dev/null || true; printf "\b \n"; unset SPINNER_PID; fi }
+
+### CLI ARG PARSING (must happen BEFORE interactive selection)
+for arg in "$@"; do
+  case $arg in
+    --panel) INSTALL_PANEL=true ;;
+    --wings) INSTALL_WINGS=true ;;
+    --all) INSTALL_PANEL=true; INSTALL_WINGS=true ;;
+    --domain=*) PANEL_DOMAIN="${arg#*=}" ;;
+    --db-pass=*) DB_PASSWORD="${arg#*=}" ;;
+    --email=*) ADMIN_EMAIL="${arg#*=}" ;;
+    --user=*) ADMIN_USERNAME="${arg#*=}" ;;
+    --admin-pass=*) ADMIN_PASS="${arg#*=}" ;;
+    --first=*) ADMIN_FIRST="${arg#*=}" ;;
+    --last=*) ADMIN_LAST="${arg#*=}" ;;
+    --tz=*) APP_TIMEZONE="${arg#*=}" ;;
+    --yes|-y) AUTO_YES=true ;;
+    --no-update) NO_SELF_UPDATE=true ;;
+    --help|-h) echo "Usage: $0 [--panel] [--wings] [--all] [--domain=...] [--db-pass=...] [--email=...] [--user=...] [--admin-pass=...] [--first=...] [--last=...] [--tz=...] [--yes] [--no-update]"; exit 0 ;;
+    *) ;;
+  esac
+done
+
+### SELF-UPDATE
+self_update() {
+  [ "$NO_SELF_UPDATE" = true ] && { info "Self-update übersprungen (--no-update)."; return; }
+  info "Prüfe auf neue Installer-Version..."
+  if ! curl -fsSL -o /tmp/installer.new "$GITHUB_RAW_URL"; then warn "Konnte neue Installer-Version nicht herunterladen."; return; fi
+  newsum=$(sha256sum /tmp/installer.new | awk '{print $1}')
+  oldsum=$(sha256sum "$0" | awk '{print $1}')
+  if [ "$newsum" != "$oldsum" ]; then
+    if [ "$AUTO_YES" = true ]; then
+      info "Auto-Update: neue Version automatisch übernehmen."
+      mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "${ORIG_ARGS[@]}"
+    else
+      read -r -p "Update für Installer verfügbar. Jetzt aktualisieren? [y/N]: " resp
+      if [[ "$resp" =~ ^[Yy]$ ]]; then
+        info "Installer wird aktualisiert..."
+        mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "${ORIG_ARGS[@]}"
+      else
+        warn "Benutzer hat Update abgelehnt."; rm -f /tmp/installer.new
+      fi
+    fi
+  else
+    info "Installer ist aktuell."; rm -f /tmp/installer.new
+  fi
+}
+
+### FUNCTIONS (all defined before use)
 install_common_dependencies() {
   info "System aktualisieren und Basis-Pakete installieren..."
   run_logged "apt-get update -y"
   run_logged "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
-  run_logged "apt-get install -y curl wget gnupg ca-certificates lsb-release apt-transport-https unzip tar git pwgen software-properties-common"
+  run_logged "apt-get install -y curl wget gnupg2 gpg ca-certificates lsb-release apt-transport-https unzip tar git pwgen software-properties-common"
 }
 
 install_php_and_redis_repo() {
   info "Repositorys für PHP (sury) und Redis hinzufügen..."
   run_logged "apt-get install -y apt-transport-https lsb-release ca-certificates curl"
-  run_logged "curl -sSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/deb.sury.org.gpg"
-  echo "deb [signed-by=/usr/share/keyrings/deb.sury.org.gpg] https://packages.sury.org/php/ ${DEBIAN_CODENAME} main" | tee /etc/apt/sources.list.d/sury-php.list >/dev/null
-  run_logged "curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg"
-  echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb ${DEBIAN_CODENAME} main" | tee /etc/apt/sources.list.d/redis.list >/dev/null
+  run_logged "curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury-php.gpg"
+  echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php-sury.list
+  run_logged "curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis.gpg"
+  echo "deb [signed-by=/usr/share/keyrings/redis.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/redis.list
+
   run_logged "apt-get update -y"
 }
 
@@ -188,7 +241,10 @@ SERVICE
 
 install_docker() {
   info "Installiere Docker CE (get.docker.com)..."
-  run_logged "curl -fsSL https://get.docker.com | CHANNEL=stable bash"
+  run_logged "curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker.gpg"
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+  run_logged "apt-get update -y"
+  run_logged "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
   run_logged "systemctl enable --now docker"
 }
 
@@ -232,14 +288,20 @@ suggest_firewall() {
 
 ### MAIN EXECUTION
 
-# Validate root
-[ "$(id -u)" -ne 0 ] && { error "Dieses Skript muss als root ausgeführt werden."; exit 1; }
+# Validate running as root
+if [ "$(id -u)" -ne 0 ]; then
+  error "Dieses Skript muss als root ausgeführt werden."
+  exit 1
+fi
+
 info "Installation gestartet: ${INSTALL_START_TS}"
 
-# Self-update
-[ "$NO_SELF_UPDATE" != true ] && self_update "$@"
+# Self-update check
+if [ "$NO_SELF_UPDATE" != true ]; then
+  self_update "${ORIG_ARGS[@]}"
+fi
 
-# CLI Flags selection
+# If no flags given, show basic selection
 if ! $INSTALL_PANEL && ! $INSTALL_WINGS; then
   cecho "\n======================================================="
   cecho "  Pterodactyl Installation (Panel & Wings) auf Debian 13"
@@ -259,7 +321,7 @@ else
   info "Installationsmodus über CLI-Flags: PANEL=$INSTALL_PANEL, WINGS=$INSTALL_WINGS"
 fi
 
-# Collect panel inputs if required
+# If panel selected, collect missing inputs
 if $INSTALL_PANEL; then
   if [ -z "$PANEL_DOMAIN" ] || [ -z "$DB_PASSWORD" ] || [ -z "$ADMIN_EMAIL" ] || [ -z "$ADMIN_USERNAME" ] || [ -z "$ADMIN_PASS" ]; then
     cecho "\n--- Panel Eingaben (interaktiv) ---"
@@ -282,16 +344,31 @@ fi
 # Start installation steps
 install_common_dependencies
 install_php_and_redis_repo
-$INSTALL_PANEL && { install_panel_dependencies; install_mariadb_setup; install_panel_files; install_nginx_site; install_queue_worker; }
-$INSTALL_WINGS && { install_docker; install_wings_binary; }
 
-# Final summary
+if $INSTALL_PANEL; then
+  install_panel_dependencies
+  install_mariadb_setup
+  install_panel_files
+  install_nginx_site
+  install_queue_worker
+fi
+
+if $INSTALL_WINGS; then
+  install_docker
+  install_wings_binary
+fi
+
+# Final
 cecho "\n======================================================="
 cecho "${GREEN}✅ Installation der ausgewählten Komponenten abgeschlossen.${RESET}"
-$INSTALL_PANEL && cecho "Panel: https://${PANEL_DOMAIN}
-Admin: ${ADMIN_USERNAME} / ${ADMIN_EMAIL}"
-$INSTALL_WINGS && cecho "\nWings installiert. Bitte Konfigurationsdatei /etc/pterodactyl/config.yml vom Panel erzeugen und einfügen.
-Dann starten: systemctl enable --now wings"
+if $INSTALL_PANEL; then
+  cecho "Panel: https://${PANEL_DOMAIN}"
+  cecho "Admin: ${ADMIN_USERNAME} / ${ADMIN_EMAIL}"
+fi
+if $INSTALL_WINGS; then
+  cecho "\nWings installiert. Bitte Konfigurationsdatei /etc/pterodactyl/config.yml vom Panel erzeugen und einfügen."
+  cecho "Dann starten: systemctl enable --now wings"
+fi
 suggest_firewall
 cecho "Logs: ${LOGFILE}"
 exit 0
