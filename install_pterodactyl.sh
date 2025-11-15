@@ -129,8 +129,8 @@ install_common_dependencies() {
   info "System aktualisieren und Basis-Pakete installieren..."
   run_logged "apt-get update -y"
   run_logged "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
-  # Installiere kritische Tools (curl, gpg) vor dem Hinzufügen externer Repositories
-  run_logged "apt-get install -y curl wget gnupg2 gpg ca-certificates lsb-release apt-transport-https unzip tar git pwgen software-properties-common"
+  # INSTALLATION FIX: 'software-properties-common' entfernt, da es in Debian 13 oft fehlt oder unnötig ist
+  run_logged "apt-get install -y curl wget gnupg2 gpg ca-certificates lsb-release apt-transport-https unzip tar git pwgen"
 }
 
 check_dependencies() {
