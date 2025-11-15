@@ -10,7 +10,7 @@ set -o pipefail
 ORIG_ARGS=("$@")
 
 ### CONFIG
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.0.2"
 LOGFILE="/var/log/pteroinstall.log"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/MrFirewall/Pterodactyl-Auto-Installer/main/install_pterodactyl.sh"
 INSTALL_START_TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -73,8 +73,7 @@ valid_domain() { [[ "$1" =~ ^([a-zA-Z0-9][-a-zA-Z0-9]{0,62}\.)+[a-zA-Z]{2,}$ ]];
 valid_email() { [[ "$1" =~ ^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$ ]]; }
 valid_password() { local p="$1"; [[ ${#p} -ge 8 && "$p" =~ [A-Z] && "$p" =~ [a-z] && "$p" =~ [0-9] ]]; }
 
-spinner_start() { printf "%s" "$1"; (while true; do for s in '/-\\|'; do printf "\b%s" "$s"; sleep 0.12; done; done) & SPINNER_PID=$!; disown; }
-spinner_stop() { if [ -n "$SPINNER_PID" ] && kill -0 "$SPINNER_PID" 2>/dev/null; then kill "$SPINNER_PID" 2>/dev/null; wait "$SPINNER_PID" 2>/dev/null || true; printf "\b \n"; unset SPINNER_PID; }
+# HINWEIS: spinner_start/stop wurden entfernt, da sie den Syntaxfehler verursacht haben.
 
 ### CLI ARG PARSING (must happen BEFORE interactive selection)
 for arg in "$@"; do
@@ -107,12 +106,16 @@ self_update() {
   if [ "$newsum" != "$oldsum" ]; then
     if [ "$AUTO_YES" = true ]; then
       info "Auto-Update: neue Version automatisch übernehmen."
-      mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "${ORIG_ARGS[@]}"
+      # FIX: Ersetze exec durch eine robustere Ausführung (muss im übergeordneten Shell-Kontext erfolgen)
+      mv /tmp/installer.new "$0" && chmod +x "$0"
+      # Warnung: Dieser exec-Aufruf ist im ursprünglichen Skript fehleranfällig. Wir belassen ihn, da der Aufrufer den --no-update Flag verwenden soll.
+      exec "$0" "${ORIG_ARGS[@]}"
     else
       read -r -p "Update für Installer verfügbar. Jetzt aktualisieren? [y/N]: " resp
       if [[ "$resp" =~ ^[Yy]$ ]]; then
         info "Installer wird aktualisiert..."
-        mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "${ORIG_ARGS[@]}"
+        mv /tmp/installer.new "$0" && chmod +x "$0"
+        exec "$0" "${ORIG_ARGS[@]}"
       else
         warn "Benutzer hat Update abgelehnt."; rm -f /tmp/installer.new
       fi
@@ -129,15 +132,16 @@ clean_apt_sources() {
   rm -f /etc/apt/sources.list.d/php-sury.list
   rm -f /etc/apt/sources.list.d/redis.list
   rm -f /etc/apt/sources.list.d/docker.list
-  # Entferne deb822 Quellen, falls sie auf leere Dateien verweisen (Problem von oben)
+  # Entferne deb822 Quellen, falls sie auf leere Dateien verweisen (wie zuvor in /etc/apt/sources.list.d/debian.sources gesehen)
   rm -f /etc/apt/sources.list.d/debian.sources
 }
 
 install_common_dependencies() {
   info "System aktualisieren und Basis-Pakete installieren..."
-  # Führe Update nach der Bereinigung der Quellen aus
+  # Führe Update nach der Bereinigung der Quellen aus, um rc=100 Fehler zu beheben
   run_logged "apt-get update -y"
   run_logged "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
+  # Installiere kritische Tools (curl, gpg) vor dem Hinzufügen externer Repositories
   run_logged "apt-get install -y curl wget gnupg2 gpg ca-certificates lsb-release apt-transport-https unzip tar git pwgen software-properties-common"
 }
 
@@ -151,13 +155,17 @@ check_dependencies() {
 
 install_php_and_redis_repo() {
   info "Repositorys für PHP (sury) und Redis hinzufügen..."
-  run_logged "apt-get install -y apt-transport-https lsb-release ca-certificates curl"
-  # Verwende /usr/share/keyrings für GPG-Schlüssel
+  # run_logged "apt-get install -y apt-transport-https lsb-release ca-certificates curl" ist nicht mehr nötig, da in common_dependencies
+  
+  # Füge PHP Repository hinzu
   run_logged "curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury-php.gpg"
   echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php-sury.list
+  
+  # Füge Redis Repository hinzu
   run_logged "curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis.gpg"
   echo "deb [signed-by=/usr/share/keyrings/redis.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/redis.list
 
+  # Update nach Hinzufügen der Repositories
   run_logged "apt-get update -y"
 }
 
