@@ -115,7 +115,7 @@ install_common_dependencies() {
     run_logged "apt-get update -y"
     run_logged "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
     
-    # 'gnupg' statt 'gnupg2' und entfernt 'software-properties-common'
+    # 'gnupg' und entfernt 'software-properties-common'
     run_logged "apt-get install -y curl wget gnupg ca-certificates lsb-release apt-transport-https unzip tar git pwgen"
 }
 
@@ -292,6 +292,7 @@ suggest_firewall() {
 
 ### MAIN EXECUTION
 
+info "Installation gestartet: ${INSTALL_START_TS}"
 show_selection
 if $INSTALL_PANEL; then
     gather_panel_input
