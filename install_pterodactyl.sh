@@ -6,9 +6,6 @@
 
 set -o pipefail
 
-### keep original args for restart on update
-ORIG_ARGS=("$@")
-
 ### CONFIG
 SCRIPT_VERSION="1.0.0"
 LOGFILE="/var/log/pteroinstall.log"
@@ -68,61 +65,12 @@ trap_exit() {
 }
 trap trap_exit EXIT
 
-# Simple validators
+# Validators
 valid_domain() { [[ "$1" =~ ^([a-zA-Z0-9][-a-zA-Z0-9]{0,62}\.)+[a-zA-Z]{2,}$ ]]; }
 valid_email() { [[ "$1" =~ ^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$ ]]; }
 valid_password() { local p="$1"; [[ ${#p} -ge 8 && "$p" =~ [A-Z] && "$p" =~ [a-z] && "$p" =~ [0-9] ]]; }
 
-spinner_start() { printf "%s" "$1"; (while true; do for s in '/-\\|'; do printf "\b%s" "$s"; sleep 0.12; done; done) & SPINNER_PID=$!; disown; }
-spinner_stop() { if [ -n "$SPINNER_PID" ] && kill -0 "$SPINNER_PID" 2>/dev/null; then kill "$SPINNER_PID" 2>/dev/null; wait "$SPINNER_PID" 2>/dev/null || true; printf "\b \n"; unset SPINNER_PID; fi }
-
-### CLI ARG PARSING (must happen BEFORE interactive selection)
-for arg in "$@"; do
-  case $arg in
-    --panel) INSTALL_PANEL=true ;;
-    --wings) INSTALL_WINGS=true ;;
-    --all) INSTALL_PANEL=true; INSTALL_WINGS=true ;;
-    --domain=*) PANEL_DOMAIN="${arg#*=}" ;;
-    --db-pass=*) DB_PASSWORD="${arg#*=}" ;;
-    --email=*) ADMIN_EMAIL="${arg#*=}" ;;
-    --user=*) ADMIN_USERNAME="${arg#*=}" ;;
-    --admin-pass=*) ADMIN_PASS="${arg#*=}" ;;
-    --first=*) ADMIN_FIRST="${arg#*=}" ;;
-    --last=*) ADMIN_LAST="${arg#*=}" ;;
-    --tz=*) APP_TIMEZONE="${arg#*=}" ;;
-    --yes|-y) AUTO_YES=true ;;
-    --no-update) NO_SELF_UPDATE=true ;;
-    --help|-h) echo "Usage: $0 [--panel] [--wings] [--all] [--domain=...] [--db-pass=...] [--email=...] [--user=...] [--admin-pass=...] [--first=...] [--last=...] [--tz=...] [--yes] [--no-update]"; exit 0 ;;
-    *) ;;
-  esac
-done
-
-### SELF-UPDATE
-self_update() {
-  [ "$NO_SELF_UPDATE" = true ] && { info "Self-update übersprungen (--no-update)."; return; }
-  info "Prüfe auf neue Installer-Version..."
-  if ! curl -fsSL -o /tmp/installer.new "$GITHUB_RAW_URL"; then warn "Konnte neue Installer-Version nicht herunterladen."; return; fi
-  newsum=$(sha256sum /tmp/installer.new | awk '{print $1}')
-  oldsum=$(sha256sum "$0" | awk '{print $1}')
-  if [ "$newsum" != "$oldsum" ]; then
-    if [ "$AUTO_YES" = true ]; then
-      info "Auto-Update: neue Version automatisch übernehmen."
-      mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "${ORIG_ARGS[@]}"
-    else
-      read -r -p "Update für Installer verfügbar. Jetzt aktualisieren? [y/N]: " resp
-      if [[ "$resp" =~ ^[Yy]$ ]]; then
-        info "Installer wird aktualisiert..."
-        mv /tmp/installer.new "$0" && chmod +x "$0" && exec "$0" "${ORIG_ARGS[@]}"
-      else
-        warn "Benutzer hat Update abgelehnt."; rm -f /tmp/installer.new
-      fi
-    fi
-  else
-    info "Installer ist aktuell."; rm -f /tmp/installer.new
-  fi
-}
-
-### FUNCTIONS (all defined before use)
+### FUNCTIONS (vollständig)
 install_common_dependencies() {
   info "System aktualisieren und Basis-Pakete installieren..."
   run_logged "apt-get update -y"
@@ -284,20 +232,14 @@ suggest_firewall() {
 
 ### MAIN EXECUTION
 
-# Validate running as root
-if [ "$(id -u)" -ne 0 ]; then
-  error "Dieses Skript muss als root ausgeführt werden."
-  exit 1
-fi
-
+# Validate root
+[ "$(id -u)" -ne 0 ] && { error "Dieses Skript muss als root ausgeführt werden."; exit 1; }
 info "Installation gestartet: ${INSTALL_START_TS}"
 
-# Self-update check
-if [ "$NO_SELF_UPDATE" != true ]; then
-  self_update "${ORIG_ARGS[@]}"
-fi
+# Self-update
+[ "$NO_SELF_UPDATE" != true ] && self_update "$@"
 
-# If no flags given, show basic selection
+# CLI Flags selection
 if ! $INSTALL_PANEL && ! $INSTALL_WINGS; then
   cecho "\n======================================================="
   cecho "  Pterodactyl Installation (Panel & Wings) auf Debian 13"
@@ -317,7 +259,7 @@ else
   info "Installationsmodus über CLI-Flags: PANEL=$INSTALL_PANEL, WINGS=$INSTALL_WINGS"
 fi
 
-# If panel selected, collect missing inputs
+# Collect panel inputs if required
 if $INSTALL_PANEL; then
   if [ -z "$PANEL_DOMAIN" ] || [ -z "$DB_PASSWORD" ] || [ -z "$ADMIN_EMAIL" ] || [ -z "$ADMIN_USERNAME" ] || [ -z "$ADMIN_PASS" ]; then
     cecho "\n--- Panel Eingaben (interaktiv) ---"
@@ -340,31 +282,16 @@ fi
 # Start installation steps
 install_common_dependencies
 install_php_and_redis_repo
+$INSTALL_PANEL && { install_panel_dependencies; install_mariadb_setup; install_panel_files; install_nginx_site; install_queue_worker; }
+$INSTALL_WINGS && { install_docker; install_wings_binary; }
 
-if $INSTALL_PANEL; then
-  install_panel_dependencies
-  install_mariadb_setup
-  install_panel_files
-  install_nginx_site
-  install_queue_worker
-fi
-
-if $INSTALL_WINGS; then
-  install_docker
-  install_wings_binary
-fi
-
-# Final
+# Final summary
 cecho "\n======================================================="
 cecho "${GREEN}✅ Installation der ausgewählten Komponenten abgeschlossen.${RESET}"
-if $INSTALL_PANEL; then
-  cecho "Panel: https://${PANEL_DOMAIN}"
-  cecho "Admin: ${ADMIN_USERNAME} / ${ADMIN_EMAIL}"
-fi
-if $INSTALL_WINGS; then
-  cecho "\nWings installiert. Bitte Konfigurationsdatei /etc/pterodactyl/config.yml vom Panel erzeugen und einfügen."
-  cecho "Dann starten: systemctl enable --now wings"
-fi
+$INSTALL_PANEL && cecho "Panel: https://${PANEL_DOMAIN}
+Admin: ${ADMIN_USERNAME} / ${ADMIN_EMAIL}"
+$INSTALL_WINGS && cecho "\nWings installiert. Bitte Konfigurationsdatei /etc/pterodactyl/config.yml vom Panel erzeugen und einfügen.
+Dann starten: systemctl enable --now wings"
 suggest_firewall
 cecho "Logs: ${LOGFILE}"
 exit 0
